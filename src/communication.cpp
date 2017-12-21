@@ -1,9 +1,5 @@
 #include "globals.h"
 
-WiFiServer server(BEEMO_PORT);
-
-
-
 void handleWiFiEvent(WiFiEvent_t event){
     switch(event) {
         case SYSTEM_EVENT_AP_START:
@@ -38,25 +34,169 @@ void handleWiFiEvent(WiFiEvent_t event){
     }
 }
 
+void onRequest(AsyncWebServerRequest *request){
+  //Handle Unknown Request
+  frisbeem.com.log("Unknown Page: 404",true);
+  request->send(404);
+}
+
+void onBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+  //Handle body
+  frisbeem.com.log("Handle Body Message",true);
+}
+
+void onUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
+  //Handle upload
+  frisbeem.com.log("Upload",true);
+}
+
+void onEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len){
+  //Handle WebSocket event
+  if(type == WS_EVT_CONNECT){
+    //client connected
+    //os_printf("ws[%s][%u] connect\n", server->url(), client->id());
+    client->printf("Hello Client %u :)", client->id());
+    frisbeem.com.log( "ws connect C:" +String(client->id()),true);
+    client->ping();
+  } else if(type == WS_EVT_DISCONNECT){
+    //client disconnected
+    frisbeem.com.log( "ws disconnect S: "+ String(server->url()) +"C:" +String(client->id()),true) ;
+  } else if(type == WS_EVT_ERROR){
+    //error was received from the other end
+    frisbeem.com.log( "ws error S: "+ String(server->url()) +"C:" +String(client->id()),true) ;
+  } else if(type == WS_EVT_PONG){
+    //pong message was received (in response to a ping request maybe)
+    frisbeem.com.log( "ws pong S: "+ String(server->url()) +"C:" +String(client->id()),true) ;
+  } else if(type == WS_EVT_DATA){
+    //data packet
+    AwsFrameInfo * info = (AwsFrameInfo*)arg;
+    if(info->final && info->index == 0 && info->len == len){
+      //the whole message is in a single frame and we got all of it's data
+      //os_printf("ws[%s][%u] %s-message[%llu]: ", server->url(), client->id(), (info->opcode == WS_TEXT)?"text":"binary", info->len);
+      if(info->opcode == WS_TEXT){
+        data[len] = 0;
+        frisbeem.com.log( "msg S: "+ String(server->url()) +"C:" +String(client->id()) + String((char*)data),true) ;
+        //os_printf("%s\n", (char*)data);
+      } else {
+        for(size_t i=0; i < info->len; i++){
+          //os_printf("%02x ", data[i]);
+        }
+        //os_printf("\n");
+      }
+      if(info->opcode == WS_TEXT)
+        client->text("I got your text message");
+      else
+        client->binary("I got your binary message");
+    } else {
+      //message is comprised of multiple frames or the frame is split into multiple packets
+      if(info->index == 0){
+        if(info->num == 0){}//os_printf("ws[%s][%u] %s-message start\n", server->url(), client->id(), (info->message_opcode == WS_TEXT)?"text":"binary");
+        //os_printf("ws[%s][%u] frame[%u] start[%llu]\n", server->url(), client->id(), info->num, info->len);
+      }
+      //os_printf("ws[%s][%u] frame[%u] %s[%llu - %llu]: ", server->url(), client->id(), info->num, (info->message_opcode == WS_TEXT)?"text":"binary", info->index, info->index + len);
+      if(info->message_opcode == WS_TEXT){
+        data[len] = 0;
+        //os_printf("%s\n", (char*)data);
+        frisbeem.com.log( "msg S: "+ String(server->url()) +"C:" +String(client->id()) + String((char*)data),true) ;
+      } else {
+        for(size_t i=0; i < len; i++){
+          //os_printf("%02x ", data[i]);
+        }
+        //os_printf("\n");
+      }
+
+      if((info->index + len) == info->len){
+        //os_printf("ws[%s][%u] frame[%u] end[%llu]\n", server->url(), client->id(), info->num, info->len);
+        if(info->final){
+          //os_printf("ws[%s][%u] %s-message end\n", server->url(), client->id(), (info->message_opcode == WS_TEXT)?"text":"binary");
+          if(info->message_opcode == WS_TEXT)
+            client->text("I got your text message");
+          else
+            client->binary("I got your binary message");
+        }
+      }
+    }
+  }
+}
+
+
 void COM::initialize(){
-  Serial.begin( 115200 ); //Open Serial...Mmm breakfast
-  // delay(300);
-
-  // log("Initlaize:");
-  // log(WiFi.localIP());
-  // log(WiFi.subnetMask());
-  // log(WiFi.gatewayIP());
-  // log(WiFi.SSID());
-
-//   Turned Off For Manual
+    if (LOG_DEBUG){Serial.begin( 115200 );} //Open Serial...Mmm breakfast
     initialize_server();
-  // initialize_mdns();
+    setup_ble_beacon();
 }
 
 void COM::initialize_server(){
   setup_wifi();
-  setup_ble_beacon();
+
+  // attach AsyncWebSocket
+  ws.onEvent(onEvent);
+  server.addHandler(&ws);
+
+  // attach AsyncEventSource
+  server.addHandler(&events);
+
+  // respond to GET requests on URL /heap
+  server.on("/heap", HTTP_GET, [this](AsyncWebServerRequest *request){
+    this -> log("GET HEAP",true);
+    request->send(200, "text/plain", String(ESP.getFreeHeap()));
+  });
+
+  // upload a file to /upload
+  server.on("/upload", HTTP_POST, [this](AsyncWebServerRequest *request){
+    this -> log("POST UPLOAD",true);
+    request->send(200);
+  }, onUpload);
+
+  // send a file when /index is requested
+  server.on("/index", HTTP_ANY, [this](AsyncWebServerRequest *request){
+    //request->send(SPIFFS, "/index.htm");
+    this -> log("INDEX",true);
+    request->send(200, "/index.htm");
+  });
+
+  // send a file when /index is requested
+  server.on("/tel/activate", HTTP_ANY, [this](AsyncWebServerRequest *request){
+    //request->send(SPIFFS, "/index.htm");
+    this -> log("TEL_ACTIVE",true);
+    startTelemetryServer();
+    request->send(200);
+  });
+
+  // send a file when /index is requested
+  server.on("/tel/deactivate", HTTP_ANY, [this](AsyncWebServerRequest *request){
+    //request->send(SPIFFS, "/index.htm");
+    this -> log("TEL_DEACTIVATE",true);
+    stopTelemetryServer();
+    request->send(200);
+  });
+
+  // HTTP basic authentication
+  // server.on("/login", HTTP_GET, [](AsyncWebServerRequest *request){
+  //   this -> log("GET LOGIN",true);
+  //   if(!request->authenticate(http_username, http_password))
+  //       return request->requestAuthentication();
+  //   request->send(200, "text/plain", "Login Success!");
+  // });
+
+  server.onNotFound(onRequest);
+  server.onFileUpload(onUpload);
+  server.onRequestBody(onBody);
+
   server.begin();
+  if (LOG_DEBUG){ startTelemetryServer();}
+}
+
+void COM::startTelemetryServer()
+{
+  telemetry_activated = true;
+  telemetry_server.begin();
+}
+
+void COM::stopTelemetryServer()
+{
+  telemetry_activated = false;
+  telemetry_server.stop();
 }
 
 void COM::setup_wifi(){
@@ -64,46 +204,10 @@ void COM::setup_wifi(){
   WiFi.softAP(SSID_AP);
   WiFi.onEvent(handleWiFiEvent);
   scanWifiNetworks();
-  // Do a little work to get a unique-ish name. Append the
-  // last two bytes of the MAC (HEX'd) to "Thing-":
-  // mac = WiFi.softAPmacAddress();
-  // String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
-  //                String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
-  // macID.toUpperCase();
-  // String AP_NameString = ssid + macID;
-  //
-  // char AP_NameChar[AP_NameString.length() + 1];
-  // memset(AP_NameChar, 0, AP_NameString.length() + 1);
-  //
-  // for (int i=0; i<AP_NameString.length(); i++)
-  //   AP_NameChar[i] = AP_NameString.charAt(i);
-
-  //WiFi.softAP(AP_NameChar, password);
-
 }
 
 void COM::setup_ble_beacon(){
   ble.begin(SSID_AP);
-  // BLEDevice::init("Frisbeem");
-  //
-  // // Create the BLE Server
-  // BLEServer *pServer = BLEDevice::createServer();
-  // pServer->setCallbacks(new MyServerCallbacks());
-  //
-  //
-  // BLEService *pService = pServer->createService(SERVICE_UUID);
-  // pCharacteristic = pService->createCharacteristic(
-  //                     CHARACTERISTIC_UUID,
-  //                     BLECharacteristic::PROPERTY_READ   |
-  //                     BLECharacteristic::PROPERTY_WRITE  |
-  //                     BLECharacteristic::PROPERTY_INDICATE|
-  //                     BLECharacteristic::PROPERTY_NOTIFY
-  //                   );
-  //
-  // pCharacteristic->addDescriptor(new BLE2902());
-  // pService->start();
-  //
-  // pCharacteristic->setValue(&cc, 1);
 }
 
 void COM::update_ble_beacon(){
@@ -113,7 +217,7 @@ void COM::update_ble_beacon(){
 
 void COM::flush()
 {
-    Serial.flush();
+    if (LOG_DEBUG){Serial.flush();}
 }
 
 void COM::scanWifiNetworks(){
@@ -136,6 +240,274 @@ void COM::scanWifiNetworks(){
   log("scan end "+String(micros()));
 }
 
+void COM::open(){
+  //Determine Number Of Clients
+  clientCount = 0; // Needs To Be Zero For Loop
+  for (int i=lastActive; i<MAX_CLIENTS+lastActive; i++){
+    _loopClient = ws.hasClient(i);
+    activeClients[i-1] = _loopClient; //Diffferent Indexing For Array
+    if (_loopClient){clientCount++;}
+    if(!clientsActive && _loopClient) {
+        firstActive = i;
+        lastActive =  i;
+    }
+    if(clientCount > 0){clientsActive = true;}
+  }
+  log("FirstActive: "+String(firstActive));
+  log("LastActive: "+String(lastActive));
+  log("Active WSClients: "+String(ws.count()));
+  log("Active Clients: "+String(clientCount));
+}
+
+void COM::close(){
+  clientsActive = false;
+  firstActive = 0;
+}
+
+void COM::tick(){
+  _tick += 1;
+  _telk += 1;
+  log("TICK: --> "+String( micros()-startLoop));
+  log("TOCK: --> "+String( frisbeem.mpu.cycle_count ));
+  log("CPS: --> "+String( frisbeem.mpu.cycle_count /(micros()/1E6) ));
+  if (_tick == tickCount){
+    writeNow = true;
+  }
+  else{
+    writeNow = false;
+  }
+  if (_tick > tickCount){
+    _tick = 0;
+  }
+  //Telemtery Counting
+  if (_telk == telCount){
+    telNow = true;
+  }
+  else{
+    telNow = false;
+  }
+  if (_telk > telCount){
+    _telk = 0;
+  }
+}
+
+void COM::start_cycle()
+{
+  startLoop = micros();
+}
+
+void COM::update(){
+  log("Update COM");
+  serveTelemetry();
+}
+
+void COM::broadcastClients(String msg)
+{
+  ws.textAll(msg);
+}
+
+void COM::broadcastPrimary(String msg)
+{ //Get This Guy Going At A Clip
+  //Assume We Have An Active First Client - ID Starts at 1 baby
+  ws.text(firstActive,msg);
+  //ws.binary(firstActive,(char*) msg.c_str());
+  //AsyncWebSocketClient *c = ws.client(lastActive);
+  //AsyncClient *cl = c -> client();
+  //cl -> write( (char*) msg.c_str() );
+
+}
+
+
+void COM::log(String message, bool force){
+  //Super Debug Mode Will Try Both Serial And WiFi-zle if it's turn
+  //We will default to serial always for zeee robust debugging
+  if ( writeNow || force){
+    if (LOG_DEBUG){Serial.println( "LOG:\t"+message  );}
+    broadcastPrimary( "LOG:\t"+message );
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//Telemetry
+
+void COM::serveTelemetry()
+{
+  if (telemetry_activated || LOG_DEBUG)
+  {
+    WiFiClient telemetry_client = telemetry_server.available();   // listen for incoming clients
+
+    if (telemetry_client || LOG_DEBUG) {                             // if you get a client,
+      log("Telemetry Client");          // print a message out the serial port
+      String currentLine = "";                // make a String to hold incoming data from the client
+        if (telemetry_client.connected() || LOG_DEBUG)
+        {            // loop while the client's connected
+          //send_telemetry();
+          str_send_telemetry();
+        }
+      // Clean it up
+      telemetry_client.stop();
+    }
+  }
+}
+
+void COM::directTelemetry(TEL_TYPES type, unsigned long time)
+{
+  char *btime;
+  btime = (char *) &time;
+  //Send Dis Ish
+  telemetry_client.print((char)type);
+  telemetry_client.println(btime);
+}
+
+void COM::directTelemetry(TEL_TYPES type, float x, float y, float z)
+{
+  char *X,*Y,*Z;
+  X = (char *) &x;
+  Y = (char *) &y;
+  Z = (char *) &z;
+  //Send Dis Ish
+  telemetry_client.print((char)type);
+  telemetry_client.print(X);
+  telemetry_client.print(Y);
+  telemetry_client.println(Z);
+}
+
+void COM::send_telemetry(){
+  send_time();
+  send_gyro();
+  send_mag();
+  send_acl();
+  send_acl_rl();
+  send_acl_wlrd();
+  send_vel();
+  send_pos();
+}
+
+void COM::send_time(){
+  //Send Gyro Values
+  directTelemetry(TME, micros());
+}
+
+void COM::send_mag(){
+  //Send Gyro Values
+  directTelemetry(MAG,frisbeem.mpu.M.x,
+                      frisbeem.mpu.M.y,
+                      frisbeem.mpu.M.z);
+}
+
+void COM::send_gyro(){
+  //Send Gyro Values
+  directTelemetry(GYRO, frisbeem.mpu.G.x,
+                        frisbeem.mpu.G.y,
+                        frisbeem.mpu.G.z);
+}
+void COM::send_acl(){
+  //Send ACL Values
+  directTelemetry(ALIN, frisbeem.mpu.A.x,
+                        frisbeem.mpu.A.y,
+                        frisbeem.mpu.A.z);
+}
+
+void COM::send_acl_rl(){
+  //Send ACL Values
+  directTelemetry(AWORLD, frisbeem.physics.Alin.x,
+                          frisbeem.physics.Alin.y,
+                          frisbeem.physics.Alin.z);
+
+}
+
+void COM::send_acl_wlrd(){
+  //Send ACL Values
+  directTelemetry(AWORLD, frisbeem.physics.Awrld.x,
+                          frisbeem.physics.Awrld.y,
+                          frisbeem.physics.Awrld.z);
+
+}
+
+void COM::send_vel(){
+  //Send ACL Values
+  directTelemetry(VEL,frisbeem.physics.V.x,
+                      frisbeem.physics.V.y,
+                      frisbeem.physics.V.z);
+}
+
+void COM::send_pos(){
+  //Send ACL Values
+  directTelemetry(POS,frisbeem.physics.X.x,
+                      frisbeem.physics.X.y,
+                      frisbeem.physics.X.z);
+}
+
+
+void COM::str_send_telemetry(){
+  str_send_time();
+  str_send_gyro();
+  str_send_mag();
+  str_send_acl();
+  str_send_acl_rl();
+  str_send_vel();
+  str_send_pos();
+}
+
+void COM::telemetry(String pck, String message){
+  //Send telemetry every opprotunity only on wifi
+  //Normally Commented... for debug
+  if ( telNow ){
+    if (LOG_DEBUG){
+      Serial.println( "TEL:\t"+pck+":\t"+ message );}
+    if (telNow && telemetry_client) {
+      telemetry_client.println( "TEL:\t"+pck+":\t"+ message );}
+  }
+
+}
+
+void COM::str_send_time(){
+  //Send Gyro Values
+  telemetry("TME",  String(micros()));
+}
+
+void COM::str_send_gyro(){
+  //Send Gyro Values
+  telemetry("GYR",  String(frisbeem.mpu.G.x)+","+
+                    String(frisbeem.mpu.G.y)+","+
+                    String(frisbeem.mpu.G.z)+";");
+}
+
+void COM::str_send_mag(){
+  //Send Gyro Values
+  telemetry("MAG",  String(frisbeem.mpu.M.x)+","+
+                    String(frisbeem.mpu.M.y)+","+
+                    String(frisbeem.mpu.M.z)+";");
+}
+
+void COM::str_send_acl(){
+  //Send ACL Values
+  telemetry("ACL",  String(frisbeem.mpu.A.x)+","+
+                    String(frisbeem.mpu.A.y)+","+
+                    String(frisbeem.mpu.A.z)+";");
+}
+
+void COM::str_send_acl_rl(){
+  //Send ACL Values
+  telemetry("AKM",  String(frisbeem.physics.A.x)+","+
+                    String(frisbeem.physics.A.y)+","+
+                    String(frisbeem.physics.A.z)+";");
+}
+
+void COM::str_send_vel(){
+  //Send ACL Values
+  telemetry("VEL",  String(frisbeem.physics.V.x)+","+
+                    String(frisbeem.physics.V.y)+","+
+                    String(frisbeem.physics.V.z)+";");
+}
+
+void COM::str_send_pos(){
+  //Send ACL Values
+  telemetry("POS",  String(frisbeem.physics.X.x)+","+
+                    String(frisbeem.physics.X.y)+","+
+                    String(frisbeem.physics.X.z)+";");
+}
+
 // void COM::initialize_mdns(){
 //   log("Initlaizing MDNS");
 //   subServices.push_back("printer");
@@ -155,247 +527,3 @@ void COM::scanWifiNetworks(){
 //     log("MDNS Started");
 //   }
 // }
-
-void COM::tick(){
-  _tick += 1;
-  log("tick...");
-  if (_tick == tickCount){
-    writeNow = true;
-  }
-  else{
-    writeNow = false;
-  }
-  if (_tick > tickCount){
-    _tick = 0;
-  }
-}
-
-void COM::update(){
-  log("Sending MDNS Information");
-  //mdns.processQueries();
-  read();
-  //scanWifiNetworks();
-  //send_telemetry();
-}
-
-void COM::open(){
-  // Check if a client has connected
-  initial_connection = false;
-  log("Checking For Client");
-  client = server.available();
-  if (!client) {
-    log("No Client Found");
-    return;
-  }
-  else{
-    log("Client Found",true);
-    initial_connection = true;
-  }
-}
-
-void COM::close(){
-  if (initial_connection){
-    client.stop();
-    initial_connection = false;
-  }
-}
-
-String COM::read(){
-   String currentLine = "";
-   if (initial_connection) {                             // if you get a client,
-     log("New Client",true);           // print a message out the serial port
-                   // make a String to hold incoming data from the client
-    bool firstTime = true;
-    wait_count = 0;
-     while (client.connected()) {            // loop while the client's connected
-
-      if (firstTime) {log("Client Connected",true);}
-
-       if (client.available()) {             // if there's bytes to read from the client,
-         wait_count = 0;
-         char c = client.read();             // read a byte, then
-         log("Client Read: "+String(c),true);
-       if (c == '\n') {
-         if (currentLine.length() == 0) {
-           currentLine = "";
-           //break;
-         }
-         else {    // if you got a newline, then clear currentLine:
-           currentLine += c;
-           parseStringForMessage(currentLine);
-           currentLine = "";
-         }
-       }
-       else if (c != '\r') {  // if you got anything else but a carriage return character,
-         currentLine += c;      // add it to the end of the currentLine
-       }
-     }
-
-     //While loop Post Counters
-     else{ wait_count++; }
-     if (wait_count > wait_lim){break;} //Exit No Client Data
-     firstTime = false;
-   }
-   if (currentLine.length() > 0) {log( currentLine, true);}
-   return currentLine;
-  }
-  return String();
-}
-
-void COM::parseStringForMessage(String inputString){
-  //Messages Will End With A \r\n and will be of the format
-  //PRIMARY_CMD\tSECONDARY_CMD\tARGUMENT\r\n
-  //PRIMARY_CMD and SECONDARY_CMD are each 3 char (for development... int later)
-
-  //Combine The Unparsed String & inputString
-  //We will check for an ending, if one exists will parse the arguments
-  //If It Doesn't Exist We'll reset unParsedMsg = messageString to work at a
-  //Later Iteration
-  String messageString = unParsedMsg + inputString;
-  log(messageString,true);
-  int currentIndex = 0;
-  int it = 0;
-  //ßlog(messageString,true);
-  while( true ){ //This is dangerous to loop all the time
-    int endIndex = messageString.indexOf("\n",currentIndex);
-    //log("END Index "+String(endIndex),true);
-    if (endIndex == -1){ //Line Feed Character Return Not Found
-      log("MSG End Not Found");
-      unParsedMsg = messageString.substring(currentIndex);
-      unParsedMsg.replace("\r","");
-      unParsedMsg.replace("\n","");
-      break;
-    }
-    else{
-      //Check Primary Keys return "" (empty char if none). Format Message
-      String currentMessage = messageString.substring( currentIndex, endIndex);
-      currentMessage.replace("\r","");
-      currentMessage.replace("\n","");
-      String primary_key = currentMessage.substring(0,3);
-      String secondary_key = currentMessage.substring(4,7);
-      String argument = currentMessage.substring(8);
-      //log(String(it)+" From: "+currentMessage, true);
-      //log(String(it)+" Got: PK||"+primary_key+"||SK||"+secondary_key+"||ARG||"+argument, true);
-
-      //For Now We'll Handle The Command. Well want to event the sheeeet out of this later
-      handleCommand( primary_key, secondary_key, argument);
-      currentIndex = endIndex+1;
-      it++;
-    }
-  }//while
-  client.println('RECV');
-}
-
-void COM::handleCommand(String pk, String sk, String arg)
-{
-  log(" Got: PK||"+pk+"||SK||"+sk+"||ARG||"+arg, true);
-  if (pk == "GAM" & sk == "SEL")
-  { unsigned int selectedGame = (unsigned int)(arg.toInt());
-    COMEvent * comEvent = new COM_GameSelect(selectedGame);
-    frisbeem.event_queue.addEvent( comEvent );
-  }
-  else{
-    COMEvent * comEvent = new COMEvent(pk,sk,arg);
-    frisbeem.event_queue.addEvent( comEvent );
-  }
-
-}
-  // if (pk.equals("PWR")){
-  //   if (sk.equals("OFF")){ frisbeem.lights._on = false;}
-  //   if (sk.equals("ONN")){ frisbeem.lights._on = true;}
-  // }
-  // if (pk.equals("TEL")){
-  //   if (sk.equals("CAL"))
-  //   {
-  //     // Calibrate gyro and accelerometers, load biases in bias registers
-  //     //frisbeem.mpu.calibrateMPU9250(frisbeem.mpu.gyroBias, frisbeem.mpu.accelBias);
-  //     delay(1000);
-  //     //frisbeem.mpu.initMPU9250();
-  //     //frisbeem.mpu.Axy_lp = 0;
-  //     //frisbeem.mpu.Axy_lp = 0;
-  //    }
-  // }
-// }
-
-void COM::log(String message, bool force){
-  //Super Debug Mode Will Try Both Serial And WiFi-zle if it's turn
-  //We will default to serial always for zeee robust debugging
-  if ( writeNow || force){
-    Serial.println( "LOG:\t"+message );
-    if (initial_connection){
-      server.println( "LOG:\t"+message );
-    }
-  }
-  /*#ifdef LOG_DEBUG
-    log("debug delay");
-    delay(10);
-  #endif*/
-}
-
-void COM::telemetry(String pck, String message){
-  //Send telemetry every opprotunity only on wifi
-  if ( initial_connection ){
-    server.println( "TEL:\t"+pck+":\t"+ message );
-
-  }
-  //Normally Commented... for debug
-  if ( writeNow ){
-    Serial.println( "TEL:\t"+pck+":\t"+ message );
-  }
-}
-
-void COM::send_telemetry(){
-  send_time();
-  send_gyro();
-  send_mag();
-  send_acl();
-  send_acl_rl();
-  send_vel();
-  send_pos();
-}
-
-void COM::send_time(){
-  //Send Gyro Values
-  telemetry("TME",  String(micros()));
-}
-
-void COM::send_mag(){
-  //Send Gyro Values
-  telemetry("MAG",  String(frisbeem.mpu.M.x)+","+
-                    String(frisbeem.mpu.M.y)+","+
-                    String(frisbeem.mpu.M.z)+";");
-}
-
-void COM::send_gyro(){
-  //Send Gyro Values
-  telemetry("GYR",  String(frisbeem.mpu.G.x)+","+
-                    String(frisbeem.mpu.G.y)+","+
-                    String(frisbeem.mpu.G.z)+";");
-}
-void COM::send_acl(){
-  //Send ACL Values
-  telemetry("ACL",  String(frisbeem.mpu.A.x)+","+
-                    String(frisbeem.mpu.A.y)+","+
-                    String(frisbeem.mpu.A.z)+";");
-}
-
-void COM::send_acl_rl(){
-  //Send ACL Values
-  telemetry("ARL",  String(frisbeem.mpu.Awrld.x)+","+
-                    String(frisbeem.mpu.Awrld.y)+","+
-                    String(frisbeem.mpu.Awrld.z)+";");
-}
-
-void COM::send_vel(){
-  //Send ACL Values
-  telemetry("VEL",  String(frisbeem.mpu.V.x)+","+
-                    String(frisbeem.mpu.V.y)+","+
-                    String(frisbeem.mpu.V.z)+";");
-}
-
-void COM::send_pos(){
-  //Send ACL Values
-  telemetry("POS",  String(frisbeem.mpu.X.x)+","+
-                    String(frisbeem.mpu.X.y)+","+
-                    String(frisbeem.mpu.X.z)+";");
-}

@@ -53,7 +53,7 @@ void PACMAN::update()
   lastTime = now;
 
   frisbeem.com.log( "Game: "+ this -> name );
-  if (frisbeem.mpu.spin ){ doDaPacman = true; }
+  if (frisbeem.physics.spin ){ doDaPacman = true; }
   else { doDaPacman = false;
          theta = 0;
        }
@@ -218,5 +218,6 @@ void GameManager::update() {
 }
 
 void GameManager::render() {
-  _games.at(gameIndex) -> render();
+  if (frisbeem.lights._on){_games.at(gameIndex) -> render();}
+  else{ frisbeem.lights.allOff();}
 }

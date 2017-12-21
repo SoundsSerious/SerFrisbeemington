@@ -15,16 +15,15 @@ void Lights::initlaize()
 
 void Lights::update(uint8_t wait)
 {
-  if (_on){
-    if ( frisbeem.mpu.rest ){ colorAll(CRGB(0,0,255)); }
-    else if(frisbeem.mpu.spin ){ colorAll(CRGB(255,0,0)); }
-    else if( ~frisbeem.mpu.rest ){ colorAll(CRGB(0,0,255)); }
-    refresh();
-  }
-  else{
-    allOff();
-  }
-
+  // if (_on){
+  //   if ( frisbeem.physics.rest ){ colorAll(CRGB(0,0,255)); }
+  //   else if(frisbeem.physics.spin ){ colorAll(CRGB(255,0,0)); }
+  //   else if( ~frisbeem.physics.rest ){ colorAll(CRGB(0,0,255)); }
+  //   refresh();
+  // }
+  // else{
+  //   allOff();
+  // }
 }
 
 void Lights::refresh(){

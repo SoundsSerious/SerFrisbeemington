@@ -5,6 +5,7 @@
 #include "observer.h"
 //#include "event.h"
 #include "games.h"
+#include <MPU9250_spi.h>
 #include <vector>
 
 #define MAX_OBSERVERS 20

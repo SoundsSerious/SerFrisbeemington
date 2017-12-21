@@ -1,6 +1,11 @@
+#include <WiFi.h>
 #include <Arduino.h>
+#include <SPI.h>
+#include <SimpleBLE.h>
+#include <FastLED.h>
+#include <ESPAsyncWebServer.h>
 #include "globals.h"
-//#include <Wire.h>
+
 
 //using namespace std;
 //WARNING: I SUCK AT SPELLING. FEEL FREE TO FIX ANY SPELLING ERRORS XP

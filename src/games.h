@@ -5,7 +5,7 @@
 #include "observer.h"
 #include "event.h"
 #include <vector>
-#include "FastLED.h"
+#include "FastLED/FastLED.h"
 
 class COMEvent;
 

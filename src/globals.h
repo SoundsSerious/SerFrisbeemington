@@ -6,7 +6,8 @@
 #include <WString.h>
 extern Frisbeem frisbeem;
 
+using namespace std;
+
 #define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
 
-using namespace std;
 #endif //GLOBAL_H

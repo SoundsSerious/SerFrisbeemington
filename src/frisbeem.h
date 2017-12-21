@@ -10,6 +10,7 @@
 #include "subject.h"
 #include "event.h"
 #include "games.h"
+#include "physics.h"
 #include "system_info.h"
 
 #ifndef FRISBEEM_H
@@ -21,7 +22,8 @@ using namespace std;
 class Frisbeem: public Subject, public Entity
 {
 public:
-  Frisbeem(): mpu(MPU_SPI_CLOCK,MPU_CS), lights(), com(){};//Constructor
+  //Constructor
+  Frisbeem(): mpu(MPU_SPI_CLOCK,MPU_CS), lights(), com(){};
   virtual ~Frisbeem() {}; //Destructor (of doooom)
 
   //Physical parameters
@@ -36,6 +38,9 @@ public:
   MPU9250 mpu;
   Lights lights;
 
+  //Physics
+  Physics physics;
+
   //Connection
   COM com;
 
@@ -44,6 +49,13 @@ public:
 
   //Events
   EventQueue event_queue;
+
+  //Setting Bits (USE CHECK_BIT(var,pos)):
+  //(1=ON,0=OFF)
+  //1: Serial
+  //2: Telemtry Server
+  //3: Lights - OFF Default
+  uint8_t setting_bits = 0b00000011;
 
   //Important Entity Functions
   virtual void initlaize();

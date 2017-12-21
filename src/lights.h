@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 //#include "dotstar.h"
-#include "FastLED.h"
+#include "FastLED/FastLED.h"
 #include <SPI.h>
 #include "system_info.h"
 
@@ -13,7 +13,7 @@ public:
   //Lights();
   ~Lights(){};
   uint8_t maxBrightness = 128; //out of 255
-  bool _on = true;
+  bool _on = false;
 
 
   //Counting variables

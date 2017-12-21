@@ -4,10 +4,13 @@ void Frisbeem::initlaize(){
    //Initalize communication
    com.initialize();
    com.log("Communication Started...");
-   com.log("Go For Initlaize");
-  // //Update MPU
+
+  // //Update MPU & Physics
    com.log("Go For Brains");
    mpu.initialize();
+   mpu.update();
+   com.log("Go For World");
+   physics.initialize();
 
    com.log("Go For Fun");
    games_manager.setup_games();
@@ -17,8 +20,10 @@ void Frisbeem::initlaize(){
    com.log("Go For Loop");
    lights.allOff();
    delay(100);
-   lights.green();   
+   lights.green();
    delay(100);
+   
+   com.start_cycle();
 }
 
 void Frisbeem::update(){
@@ -26,6 +31,7 @@ void Frisbeem::update(){
   com.log("Handshakes, Formalities, Ect...");
   com.open();
   //Tick The Log So It Can Output Periodically
+
   com.tick();
   com.log("Beeming Into Space...");
   //Update COM layer
@@ -39,14 +45,14 @@ void Frisbeem::update(){
   while ( micros() - start < renderInterval) {
     com.log("Updating MPU");
     mpu.update();
-    //updateThetaOffset();
-    com.log("Update Game");
-    games_manager.update();
-    //Send telemetry here... idk?
-    com.log("Data Stream:");
-    com.send_telemetry();
 
     com.log("Figguring It Out");
+    physics.update();
+
+    com.log("Update Game");
+    games_manager.update();
+
+    com.log("Do Da Queue");
     event_queue.processEntries(*this);
   }
   //create newEvent and process events (circular buffer)
